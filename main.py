@@ -258,7 +258,7 @@ async def procesar_datos_entrega(telefono: str, texto_direccion: str = None, lin
         # Broadcast a repartidores
         zona = dir_evaluar.split("|")[0].replace("Zona: ", "").strip() if "|" in dir_evaluar else "N/A"
         reps_dict = cargar_repartidores()
-        telefonos_repartidores = list(reps_dict.keys())
+        telefonos_repartidores = [k for k, v in reps_dict.items() if isinstance(v, dict) and v.get("disponible", True)]
         enviar_broadcast_deliverys(telefonos_repartidores, str(pedido_id), zona, pedido["total"])
         
     elif tiene_direccion:
@@ -504,6 +504,29 @@ async def handle_texto(telefono: str, texto: str):
                 enviar_mensaje_texto(telefono, f"❌ El método de pago [{pago_id}] no existe.")
             return
 
+        elif texto_upper == "DISPONIBLE":
+            if telefono in cargar_repartidores():
+                if supabase:
+                    resultado = supabase.table("repartidores").update({"disponible": True}).eq("telefono", telefono).execute()
+                    if resultado.data:
+                        enviar_mensaje_texto(telefono, "✅ Quedaste marcado como DISPONIBLE. Te llegarán los próximos pedidos.")
+                    else:
+                        enviar_mensaje_texto(telefono, "⚠️ Hubo un problema actualizando tu estado, intenta de nuevo.")
+                else:
+                    enviar_mensaje_texto(telefono, "⚠️ Base de datos no conectada.")
+            return
+
+        elif texto_upper == "OCUPADO":
+            if telefono in cargar_repartidores():
+                if supabase:
+                    resultado = supabase.table("repartidores").update({"disponible": False}).eq("telefono", telefono).execute()
+                    if resultado.data:
+                        enviar_mensaje_texto(telefono, "🔴 Quedaste marcado como OCUPADO. No recibirás nuevos pedidos hasta que escribas DISPONIBLE.")
+                    else:
+                        enviar_mensaje_texto(telefono, "⚠️ Hubo un problema actualizando tu estado, intenta de nuevo.")
+                else:
+                    enviar_mensaje_texto(telefono, "⚠️ Base de datos no conectada.")
+            return
         # ============================================================
         # BARRERA DE CONTENCIÓN: Staff nunca debe llegar a Gemini
         # ============================================================
@@ -755,7 +778,8 @@ async def handle_boton(telefono: str, boton_id: str):
                 
                 # Avisar al Admin quién lo tomó
                 reps = cargar_repartidores()
-                nombre = reps.get(telefono, f"Repartidor {telefono}")
+                datos_rep = reps.get(telefono, {})
+                nombre = datos_rep.get("nombre", f"Repartidor {telefono}") if isinstance(datos_rep, dict) else datos_rep
                 notificar_a_todos_admins_texto(f"🛵 {nombre} ha tomado el Pedido #{pedido_id} y va en camino a buscarlo al restaurante.")
                 
                 # Enviar botón de "Recibido en Restaurante" al repartidor
@@ -779,8 +803,9 @@ async def handle_boton(telefono: str, boton_id: str):
                 if "(" in cliente_nombre and ")" in cliente_nombre:
                     telefono_cliente = cliente_nombre.split("(")[-1].split(")")[0]
                     reps = cargar_repartidores()
-                    nombre = reps.get(telefono, f"Repartidor")
-                    enviar_mensaje_texto(telefono_cliente, f"🛵 ¡Excelente noticia! Tu pedido acaba de salir del restaurante y va en camino con tu repartidor(a): {nombre}. ¡Prepárate para recibirlo!")
+                    datos_rep = reps.get(telefono, {})
+                    nombre = datos_rep.get("nombre", f"Repartidor") if isinstance(datos_rep, dict) else datos_rep
+                    enviar_mensaje_texto(telefono_cliente, f"✅ ¡Excelente noticia! Tu pedido acaba de salir del restaurante y va en camino con tu repartidor(a): {nombre}. ¡Prepárate para recibirlo!")
                     
                     # Avisar al Admin que ya el repartidor recogió y va en camino al cliente
                     notificar_a_todos_admins_texto(f"✅ {nombre} ya retiró el Pedido #{pedido_id} del restaurante y va en camino a entregarlo al cliente.")
