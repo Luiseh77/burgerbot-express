@@ -32,17 +32,26 @@ ADMINISTRADORES_FILE = "administradores.json"
 TASA_FILE = "tasa.json"
 
 def cargar_administradores():
-    if os.path.exists(ADMINISTRADORES_FILE):
-        try:
-            with open(ADMINISTRADORES_FILE, "r", encoding="utf-8") as f:
-                return json.load(f)
-        except:
-            pass
-    return {}
+    if not supabase: return {"584140881670": {"nombre": "Luis", "rol": "superadmin", "activo": True}}
+    try:
+        res = supabase.table("administradores").select("*").execute()
+        if res.data:
+            return {r["telefono"]: {"nombre": r["nombre"], "rol": r["rol"], "activo": r["activo"]} 
+                    for r in res.data if r.get("activo", True)}
+        # Fallback en caso de que la tabla esté vacía
+        return {"584140881670": {"nombre": "Luis", "rol": "superadmin", "activo": True}}
+    except Exception as e:
+        print(f"Error cargando administradores: {e}")
+        return {"584140881670": {"nombre": "Luis", "rol": "superadmin", "activo": True}}
 
 def guardar_administradores(admins_dict):
-    with open(ADMINISTRADORES_FILE, "w", encoding="utf-8") as f:
-        json.dump(admins_dict, f, ensure_ascii=False, indent=4)
+    if not supabase: return
+    try:
+        lista_upsert = [{"telefono": k, "nombre": v["nombre"], "rol": v.get("rol", "admin"), "activo": v.get("activo", True)} for k, v in admins_dict.items()]
+        if lista_upsert:
+            supabase.table("administradores").upsert(lista_upsert).execute()
+    except Exception as e:
+        print(f"Error guardando administradores en Supabase: {e}")
 
 def es_administrador(telefono: str) -> bool:
     if not ADMIN_PHONE:
@@ -70,20 +79,26 @@ def notificar_a_todos_admins_texto(mensaje: str):
 
 
 def cargar_repartidores():
-    if os.path.exists(REPARTIDORES_FILE):
-        with open(REPARTIDORES_FILE, "r", encoding="utf-8") as f:
-            return json.load(f)
-    # Por defecto leyendo variables de entorno
-    default_reps = {
-        os.getenv("REPARTIDOR_1_PHONE", "584140000001"): "Repartidor 1",
-        os.getenv("REPARTIDOR_2_PHONE", "584140000002"): "Repartidor 2"
-    }
-    guardar_repartidores(default_reps)
-    return default_reps
+    if not supabase: return {}
+    try:
+        res = supabase.table("repartidores").select("*").execute()
+        if res.data:
+            # Filtramos para devolver solo los que están activos y en el formato esperado
+            return {r["telefono"]: {"nombre": r["nombre"], "disponible": r["disponible"], "activo": r["activo"]} 
+                    for r in res.data if r.get("activo", True)}
+        return {}
+    except Exception as e:
+        print(f"Error cargando repartidores desde Supabase: {e}")
+        return {}
 
 def guardar_repartidores(repartidores_dict):
-    with open(REPARTIDORES_FILE, "w", encoding="utf-8") as f:
-        json.dump(repartidores_dict, f, ensure_ascii=False, indent=4)
+    if not supabase: return
+    try:
+        lista_upsert = [{"telefono": k, "nombre": v["nombre"], "disponible": v.get("disponible", True), "activo": v.get("activo", True)} for k, v in repartidores_dict.items()]
+        if lista_upsert:
+            supabase.table("repartidores").upsert(lista_upsert).execute()
+    except Exception as e:
+        print(f"Error guardando repartidores en Supabase: {e}")
 
 def cargar_metodos_pago():
     if os.path.exists("metodos_pago.json"):
@@ -329,7 +344,8 @@ async def handle_texto(telefono: str, texto: str):
                     num_borrar = partes[2]
                     admins = cargar_administradores()
                     if num_borrar in admins:
-                        nom_borrado = admins.pop(num_borrar)
+                        admins[num_borrar]["activo"] = False
+                        nom_borrado = admins[num_borrar]["nombre"]
                         guardar_administradores(admins)
                         enviar_mensaje_texto(telefono, f"🗑️ Administrador secundario {nom_borrado} eliminado.")
                     else:
@@ -395,7 +411,9 @@ async def handle_texto(telefono: str, texto: str):
                 num_borrar = partes[2]
                 reps = cargar_repartidores()
                 if num_borrar in reps:
-                    nombre_borrado = reps.pop(num_borrar)
+                    # En vez de pop, lo marcamos como inactivo para que se guarde en DB con activo=False
+                    reps[num_borrar]["activo"] = False
+                    nombre_borrado = reps[num_borrar]["nombre"]
                     guardar_repartidores(reps)
                     enviar_mensaje_texto(telefono, f"🗑️ Repartidor {nombre_borrado} eliminado de la libreta.")
                 else:
@@ -557,6 +575,9 @@ async def handle_texto(telefono: str, texto: str):
         nombre_original = datos_pedido.get('cliente_nombre', 'Cliente')
         datos_pedido["cliente_nombre"] = f"{nombre_original} ({telefono})"
         
+        # Guardar el teléfono real en la nueva columna de DB
+        datos_pedido["telefono"] = telefono
+        
         # Guardar en DB con estado ESPERANDO_PAGO
         resultado = guardar_pedido_nuevo(datos_pedido)
         if resultado:
@@ -618,7 +639,8 @@ async def handle_imagen(telefono: str):
         response = supabase.table("pedidos").select("*").eq("estado", "ESPERANDO_PAGO").execute()
         if response.data:
             for p in response.data:
-                if telefono in str(p.get("cliente_nombre", "")):
+                # Busca en columna nueva 'telefono' primero, o hace fallback a cliente_nombre
+                if p.get("telefono") == telefono or telefono in str(p.get("cliente_nombre", "")):
                     pedido_encontrado = p
                     break
         if pedido_encontrado:
