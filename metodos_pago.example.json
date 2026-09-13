@@ -1,0 +1,20 @@
+{
+  "pago_movil": {
+    "nombre": "Pago Móvil",
+    "detalles": "Banco: 0102, CI: V12345678, Tlf: 04140000000",
+    "activo": true,
+    "banco": "0102",
+    "telefono": "04140000000",
+    "cedula": "V12345678"
+  },
+  "zelle": {
+    "nombre": "Zelle",
+    "detalles": "Correo: pagos@burgerbot.fake, A nombre de: BurgerBot Express",
+    "activo": true
+  },
+  "efectivo": {
+    "nombre": "Efectivo",
+    "detalles": "Pago en divisas ($) o Bolívares (Bs) al recibir el pedido.",
+    "activo": true
+  }
+}

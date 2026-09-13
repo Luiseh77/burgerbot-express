@@ -1,0 +1,10 @@
+﻿.env
+metodos_pago.json
+repartidores.json
+tasa.json
+administradores.json
+venv/
+__pycache__/
+
+*.log
+*.exe
