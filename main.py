@@ -1,6 +1,7 @@
 import os
 import sys
 import json
+import asyncio
 from fastapi import FastAPI, Request, HTTPException, Query, BackgroundTasks
 from fastapi.responses import PlainTextResponse
 import uvicorn
@@ -609,16 +610,23 @@ async def handle_imagen(telefono: str):
     # Si manda imagen, buscamos si hay un pedido en ESPERANDO_PAGO de este teléfono
     if not supabase: return
     
-    # Buscamos todos los ESPERANDO_PAGO y filtramos en Python para evitar bugs de LIKE en Supabase
-    response = supabase.table("pedidos").select("*").eq("estado", "ESPERANDO_PAGO").execute()
-    
     pedido_encontrado = None
-    if response.data:
-        for p in response.data:
-            if telefono in str(p.get("cliente_nombre", "")):
-                pedido_encontrado = p
-                break
-                
+    intentos = 3
+    espera_segundos = 1.5
+
+    for intento in range(intentos):
+        response = supabase.table("pedidos").select("*").eq("estado", "ESPERANDO_PAGO").execute()
+        if response.data:
+            for p in response.data:
+                if telefono in str(p.get("cliente_nombre", "")):
+                    pedido_encontrado = p
+                    break
+        if pedido_encontrado:
+            break
+        if intento < intentos - 1:
+            print(f"⏳ Pedido no encontrado aún para {telefono}, reintentando ({intento+1}/{intentos})...")
+            await asyncio.sleep(espera_segundos)
+        
     if pedido_encontrado:
         pedido_id = pedido_encontrado["id"]
         
