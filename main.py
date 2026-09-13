@@ -317,10 +317,12 @@ async def handle_ubicacion(telefono: str, lat: float, lng: float):
         enviar_mensaje_texto(telefono, texto_cobro)
 
 async def handle_texto(telefono: str, texto: str):
-    # --- COMANDOS DE ADMINISTRADOR SECRETO ---
-    if es_administrador(telefono):
-        texto_upper = texto.strip().upper()
-        
+    texto_upper = texto.strip().upper()
+    es_admin = es_administrador(telefono)
+    es_repartidor = telefono in cargar_repartidores()
+
+    # --- COMANDOS DE ADMINISTRADOR ---
+    if es_admin:
         # --- COMANDOS EXCLUSIVOS DE SÚPER ADMINISTRADOR ---
         if telefono == ADMIN_PHONE:
             if texto_upper.startswith("AGREGAR ADMINISTRADOR"):
@@ -448,51 +450,34 @@ async def handle_texto(telefono: str, texto: str):
             lista = "📋 *MÉTODOS DE PAGO REGISTRADOS:*\n"
             for k, v in metodos.items():
                 estado = "🟢 Activo" if v.get("activo", True) else "🔴 Inactivo"
-                lista += f"• *[{k}]* {v['nombre']} - {estado}\n  _Detalles:_ {v['detalles']}\n"
+                lista += f"• [{k}] {v['nombre']} - {estado}\n  Detalles: {v['detalles']}\n"
             enviar_mensaje_texto(telefono, lista)
             return
- 
+            
         elif texto_upper.startswith("AGREGAR PAGO"):
-            # Sintaxis: AGREGAR PAGO id Nombre | Detalles
-            contenido = texto[len("AGREGAR PAGO"):].strip()
-            partes_id = contenido.split(None, 1)
-            if len(partes_id) == 2:
-                pago_id = partes_id[0].lower()
-                resto = partes_id[1]
-                if "|" in resto:
-                    nombre, detalles = resto.split("|", 1)
-                    nombre = nombre.strip()
-                    detalles = detalles.strip()
+            partes = texto.split(" ", 2)
+            if len(partes) >= 3:
+                metodo_data = partes[2].split("|", 1)
+                if len(metodo_data) == 2:
+                    pago_id_full = metodo_data[0].strip()
+                    if " " in pago_id_full:
+                        pago_id, pago_nombre = pago_id_full.split(" ", 1)
+                        pago_id = pago_id.lower()
+                    else:
+                        pago_id = pago_id_full.lower()
+                        pago_nombre = pago_id_full
+                    pago_detalles = metodo_data[1].strip()
                     
                     metodos = cargar_metodos_pago()
-                    if pago_id in metodos:
-                        metodos[pago_id]["nombre"] = nombre
-                        metodos[pago_id]["detalles"] = detalles
-                    else:
-                        metodos[pago_id] = {
-                            "nombre": nombre,
-                            "detalles": detalles,
-                            "activo": True
-                        }
-                    
-                    # Extraer parámetros de Pago Móvil para el copiable si aplica
-                    if pago_id == "pago_movil":
-                        import re
-                        banco_match = re.search(r"(?:Banco|banco):\s*([a-zA-Z0-9]+)", detalles)
-                        tlf_match = re.search(r"(?:Tlf|tlf|telefono|teléfono):\s*([0-9]+)", detalles)
-                        ci_match = re.search(r"(?:CI|ci|cedula|cédula):\s*([a-zA-Z0-9]+)", detalles)
-                        if banco_match: metodos[pago_id]["banco"] = banco_match.group(1)
-                        if tlf_match: metodos[pago_id]["telefono"] = tlf_match.group(1)
-                        if ci_match: metodos[pago_id]["cedula"] = ci_match.group(1)
-                        
+                    metodos[pago_id] = {"nombre": pago_nombre, "detalles": pago_detalles, "activo": True}
                     guardar_metodos_pago(metodos)
-                    enviar_mensaje_texto(telefono, f"✅ Método de pago '{nombre}' [{pago_id}] agregado/actualizado exitosamente.")
+                    enviar_mensaje_texto(telefono, f"✅ Método de pago '{pago_nombre}' [{pago_id}] agregado.")
                 else:
-                    enviar_mensaje_texto(telefono, "❌ Formato incorrecto. Debe incluir '|' para separar el nombre de los detalles. Ej: AGREGAR PAGO zelle Zelle | Correo: email@test.com")
+                    enviar_mensaje_texto(telefono, "❌ Formato incorrecto. Usa: AGREGAR PAGO id Nombre | Detalles")
             else:
                 enviar_mensaje_texto(telefono, "❌ Formato incorrecto. Usa: AGREGAR PAGO id Nombre | Detalles")
             return
- 
+
         elif texto_upper.startswith("ELIMINAR PAGO"):
             pago_id = texto.split()[-1].lower()
             metodos = cargar_metodos_pago()
@@ -503,61 +488,6 @@ async def handle_texto(telefono: str, texto: str):
             else:
                 enviar_mensaje_texto(telefono, f"❌ El método de pago [{pago_id}] no existe.")
             return
-
-        elif texto_upper == "DISPONIBLE":
-            if telefono in cargar_repartidores():
-                if supabase:
-                    resultado = supabase.table("repartidores").update({"disponible": True}).eq("telefono", telefono).execute()
-                    if resultado.data:
-                        enviar_mensaje_texto(telefono, "✅ Quedaste marcado como DISPONIBLE. Te llegarán los próximos pedidos.")
-                    else:
-                        enviar_mensaje_texto(telefono, "⚠️ Hubo un problema actualizando tu estado, intenta de nuevo.")
-                else:
-                    enviar_mensaje_texto(telefono, "⚠️ Base de datos no conectada.")
-            return
-
-        elif texto_upper == "OCUPADO":
-            if telefono in cargar_repartidores():
-                if supabase:
-                    resultado = supabase.table("repartidores").update({"disponible": False}).eq("telefono", telefono).execute()
-                    if resultado.data:
-                        enviar_mensaje_texto(telefono, "🔴 Quedaste marcado como OCUPADO. No recibirás nuevos pedidos hasta que escribas DISPONIBLE.")
-                    else:
-                        enviar_mensaje_texto(telefono, "⚠️ Hubo un problema actualizando tu estado, intenta de nuevo.")
-                else:
-                    enviar_mensaje_texto(telefono, "⚠️ Base de datos no conectada.")
-            return
-        # ============================================================
-        # BARRERA DE CONTENCIÓN: Staff nunca debe llegar a Gemini
-        # ============================================================
-        es_admin = es_administrador(telefono)
-        es_repartidor = telefono in cargar_repartidores()
-        
-        if es_admin or es_repartidor:
-            if es_admin:
-                menu = (
-                    "🔧 *Comando no reconocido.*\n\n"
-                    "📋 *Comandos disponibles (Admin):*\n"
-                    "• AGREGAR ADMINISTRADOR <tel> <nombre>\n"
-                    "• ELIMINAR ADMINISTRADOR <tel>\n"
-                    "• AGREGAR REPARTIDOR <tel> <nombre>\n"
-                    "• ELIMINAR REPARTIDOR <tel>\n"
-                    "• VER ADMINISTRADORES\n"
-                    "• VER REPARTIDORES\n"
-                    "• FIJAR TASA <valor>\n"
-                    "• ELIMINAR PAGO <id>"
-                )
-            else:
-                menu = (
-                    "🔧 *Comando no reconocido.*\n\n"
-                    "📋 *Comandos disponibles (Repartidor):*\n"
-                    "• DISPONIBLE\n"
-                    "• OCUPADO"
-                )
-            enviar_mensaje_texto(telefono, menu)
-            return
-
-        # --- A partir de aquí, el mensaje es estrictamente de un CLIENTE ---
  
         elif texto_upper.startswith("ACTIVAR PAGO"):
             pago_id = texto.split()[-1].lower()
@@ -586,6 +516,59 @@ async def handle_texto(telefono: str, texto: str):
                 os.remove(TASA_FILE)
             enviar_mensaje_texto(telefono, "✅ Tasa manual borrada. El bot vuelve a usar la tasa automática del BCV por internet.")
             return
+
+    # --- COMANDOS DE REPARTIDOR ---
+    if es_repartidor:
+        if texto_upper == "DISPONIBLE":
+            if supabase:
+                resultado = supabase.table("repartidores").update({"disponible": True}).eq("telefono", telefono).execute()
+                if resultado.data:
+                    enviar_mensaje_texto(telefono, "✅ Quedaste marcado como DISPONIBLE. Te llegarán los próximos pedidos.")
+                else:
+                    enviar_mensaje_texto(telefono, "⚠️ Hubo un problema actualizando tu estado, intenta de nuevo.")
+            else:
+                enviar_mensaje_texto(telefono, "⚠️ Base de datos no conectada.")
+            return
+
+        elif texto_upper == "OCUPADO":
+            if supabase:
+                resultado = supabase.table("repartidores").update({"disponible": False}).eq("telefono", telefono).execute()
+                if resultado.data:
+                    enviar_mensaje_texto(telefono, "🔴 Quedaste marcado como OCUPADO. No recibirás nuevos pedidos hasta que escribas DISPONIBLE.")
+                else:
+                    enviar_mensaje_texto(telefono, "⚠️ Hubo un problema actualizando tu estado, intenta de nuevo.")
+            else:
+                enviar_mensaje_texto(telefono, "⚠️ Base de datos no conectada.")
+            return
+
+    # ============================================================
+    # BARRERA DE CONTENCIÓN: Staff nunca debe llegar a Gemini
+    # ============================================================
+    if es_admin or es_repartidor:
+        if es_admin:
+            menu = (
+                "🔧 *Comando no reconocido.*\n\n"
+                "📋 *Comandos disponibles (Admin):*\n"
+                "• AGREGAR ADMINISTRADOR <tel> <nombre>\n"
+                "• ELIMINAR ADMINISTRADOR <tel>\n"
+                "• AGREGAR REPARTIDOR <tel> <nombre>\n"
+                "• ELIMINAR REPARTIDOR <tel>\n"
+                "• VER ADMINISTRADORES\n"
+                "• VER REPARTIDORES\n"
+                "• FIJAR TASA <valor>\n"
+                "• ELIMINAR PAGO <id>"
+            )
+        else:
+            menu = (
+                "🔧 *Comando no reconocido.*\n\n"
+                "📋 *Comandos disponibles (Repartidor):*\n"
+                "• DISPONIBLE\n"
+                "• OCUPADO"
+            )
+        enviar_mensaje_texto(telefono, menu)
+        return
+
+    # --- A partir de aquí, el mensaje es estrictamente de un CLIENTE ---
 
     # 1. Verificar si el cliente tiene un pedido en ESPERANDO_PAGO
     if supabase:
