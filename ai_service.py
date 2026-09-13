@@ -96,11 +96,10 @@ FASE 3: EXTRACCIÓN DE DATOS
   3. Método de pago (Efectivo, Pago Móvil o Zelle)
 - Recuerda al cliente que la dirección exacta y el link de Google Maps se le pedirán automáticamente justo después de que se valide su pago.
 
-FASE 4: FACTURACIÓN Y COBRO (EL DISPARO FINAL)
-- Cuando tengas toda la información, suma el costo del delivery (según su Zona) al total de la comida para darle su **Gran Total a Pagar**.
-- Entrégale los Datos Bancarios correspondientes (si eligió Pago Móvil o Zelle).
-- Pídele estrictamente: "Por favor, realiza el pago y envíame la **captura de pantalla** por este medio para proceder a despachar".
-- INMEDIATAMENTE después de decir eso, DEBES llamar a la herramienta `finalizar_pedido`.
+FASE 4: DISPARO DE LA FUNCIÓN (OBLIGATORIO Y ÚNICO PASO)
+- En cuanto tengas el nombre, zona y método de pago del cliente, ejecuta la función `finalizar_pedido` INMEDIATAMENTE.
+- NO redactes ningún mensaje de cobro, total ni datos bancarios. El sistema se encarga de eso de forma automática después de procesar tu llamada a la función.
+- Tu única acción en esta fase es ejecutar el tool call. Nada más.
 """
 
 # Definimos la herramienta en formato de Gemini (schema JSON)

@@ -543,6 +543,10 @@ async def handle_texto(telefono: str, texto: str):
     
     if respuesta_ia["tipo"] == "texto":
         SESSION_MEMORY[telefono].append({"role": "assistant", "content": respuesta_ia["contenido"]})
+        # Red de seguridad: detectar si Gemini habló de cobro sin llamar a finalizar_pedido
+        contenido_lower = respuesta_ia["contenido"].lower()
+        if any(x in contenido_lower for x in ["gran total", "captura de pantalla", "pago móvil", "zelle", "transfiere"]):
+            print(f"⚠️ ALERTA: Gemini mencionó términos de cobro sin llamar a finalizar_pedido para {telefono}")
         enviar_mensaje_texto(telefono, respuesta_ia["contenido"])
         
     elif respuesta_ia["tipo"] == "pedido_completado":
@@ -556,56 +560,50 @@ async def handle_texto(telefono: str, texto: str):
         resultado = guardar_pedido_nuevo(datos_pedido)
         if resultado:
             print(f"💾 Pedido {resultado['id']} guardado. Esperando pago.")
+            
+            # Mensaje de cobro generado por el código usando datos reales del DB
+            tasa_actual = obtener_tasa_bcv()
+            total_usd = float(resultado.get('total', 0))
+            total_bs = round(total_usd * tasa_actual, 2)
+            metodos = cargar_metodos_pago()
+            metodo_cliente = datos_pedido.get('metodo_pago', '').lower()
+            
+            detalles_pago = ""
+            key_encontrada = None
+            for k, v in metodos.items():
+                if v.get("activo", True) and (k.replace("_", " ") in metodo_cliente or v["nombre"].lower() in metodo_cliente):
+                    key_encontrada = k
+                    detalles_pago = v["detalles"]
+                    break
+            if not detalles_pago:
+                detalles_pago = "Métodos disponibles:\n"
+                for k, v in metodos.items():
+                    if v.get("activo", True):
+                        detalles_pago += f"- *{v['nombre']}*: {v['detalles']}\n"
+                        
+            texto_cobro = (
+                f"¡Excelente {nombre_original}!\n\n"
+                f"Tu pedido está confirmado. El Gran Total a pagar es: *${total_usd}*\n"
+                f"*(Equivalente a {total_bs} Bs según tasa BCV de {tasa_actual})*\n\n"
+                "Por favor, realiza tu pago y envíame por aquí la *captura de pantalla* del comprobante.\n\n"
+                f"Instrucciones de Pago:\n{detalles_pago}"
+            )
+            enviar_mensaje_texto(telefono, texto_cobro)
+            
+            # Enviar formato pegable de Pago Móvil en mensaje separado
+            if key_encontrada == "pago_movil" or "movil" in metodo_cliente or "móvil" in metodo_cliente:
+                pm = metodos.get("pago_movil", {})
+                if not pm:
+                    print("⚠️ Método pago_movil no configurado en metodos_pago.json")
+                else:
+                    banco = pm.get("banco", "")
+                    tlf = pm.get("telefono", "")
+                    ced = pm.get("cedula", "")
+                    monto_formateado = f"{total_bs:.2f}".replace(".", ",")
+                    enviar_mensaje_texto(telefono, f"Banco: {banco}\nTeléfono: {tlf}\nCédula: {ced}\nMonto: {monto_formateado} Bs")
         else:
             print("❌ Error fatal: La base de datos no pudo guardar el pedido.")
-            enviar_mensaje_texto(telefono, "❌ Lo siento, hubo un error técnico al registrar tu pedido en la base de datos. Por favor, intenta hacer el pedido nuevamente.")
-            return
-            
-        # Calcular tasa BCV
-        tasa_actual = obtener_tasa_bcv()
-        total_usd = float(datos_pedido.get('gran_total', 0))
-        total_bs = round(total_usd * tasa_actual, 2)
-        
-        # Generar mensaje de cobro
-        metodos = cargar_metodos_pago()
-        metodo_cliente = datos_pedido.get('metodo_pago', '').lower()
-        
-        # Encontrar los detalles del método elegido
-        detalles_pago = ""
-        key_encontrada = None
-        for k, v in metodos.items():
-            if v.get("activo", True) and (k.replace("_", " ") in metodo_cliente or v["nombre"].lower() in metodo_cliente):
-                key_encontrada = k
-                detalles_pago = v["detalles"]
-                break
-                
-        # Si no encontramos coincidencia, listamos todos los activos
-        if not detalles_pago:
-            detalles_pago = "Métodos disponibles:\n"
-            for k, v in metodos.items():
-                if v.get("activo", True):
-                    detalles_pago += f"- *{v['nombre']}*: {v['detalles']}\n"
-                    
-        texto_cobro = (
-            f"¡Excelente {nombre_original}!\n\n"
-            f"Tu pedido está confirmado. El Gran Total a pagar es: *${total_usd}*\n"
-            f"*(Equivalente a {total_bs} Bs según tasa oficial BCV de {tasa_actual})*\n\n"
-            "Por favor, realiza tu pago y envíame por aquí la *captura de pantalla* del comprobante.\n\n"
-            f"Instrucciones de Pago:\n{detalles_pago}"
-        )
-        enviar_mensaje_texto(telefono, texto_cobro)
-        
-        # Enviar el formato pegable de Pago Móvil en mensaje separado si es el caso
-        if key_encontrada == "pago_movil" or "movil" in metodo_cliente or "móvil" in metodo_cliente:
-            pm = metodos.get("pago_movil", {})
-            if not pm:
-                print("⚠️ Método pago_movil no configurado en metodos_pago.json")
-            else:
-                banco = pm.get("banco", "")
-                tlf = pm.get("telefono", "")
-                ced = pm.get("cedula", "")
-                monto_formateado = f"{total_bs:.2f}".replace(".", ",")
-                enviar_mensaje_texto(telefono, f"Banco: {banco}\nTeléfono: {tlf}\nCédula: {ced}\nMonto: {monto_formateado} Bs")
+            enviar_mensaje_texto(telefono, "❌ Lo siento, hubo un error técnico al registrar tu pedido. Por favor, intenta hacer el pedido nuevamente.")
 
 async def handle_imagen(telefono: str):
     # Si manda imagen, buscamos si hay un pedido en ESPERANDO_PAGO de este teléfono
