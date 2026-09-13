@@ -503,6 +503,38 @@ async def handle_texto(telefono: str, texto: str):
             else:
                 enviar_mensaje_texto(telefono, f"❌ El método de pago [{pago_id}] no existe.")
             return
+
+        # ============================================================
+        # BARRERA DE CONTENCIÓN: Staff nunca debe llegar a Gemini
+        # ============================================================
+        es_admin = es_administrador(telefono)
+        es_repartidor = telefono in cargar_repartidores()
+        
+        if es_admin or es_repartidor:
+            if es_admin:
+                menu = (
+                    "🔧 *Comando no reconocido.*\n\n"
+                    "📋 *Comandos disponibles (Admin):*\n"
+                    "• AGREGAR ADMINISTRADOR <tel> <nombre>\n"
+                    "• ELIMINAR ADMINISTRADOR <tel>\n"
+                    "• AGREGAR REPARTIDOR <tel> <nombre>\n"
+                    "• ELIMINAR REPARTIDOR <tel>\n"
+                    "• VER ADMINISTRADORES\n"
+                    "• VER REPARTIDORES\n"
+                    "• FIJAR TASA <valor>\n"
+                    "• ELIMINAR PAGO <id>"
+                )
+            else:
+                menu = (
+                    "🔧 *Comando no reconocido.*\n\n"
+                    "📋 *Comandos disponibles (Repartidor):*\n"
+                    "• DISPONIBLE\n"
+                    "• OCUPADO"
+                )
+            enviar_mensaje_texto(telefono, menu)
+            return
+
+        # --- A partir de aquí, el mensaje es estrictamente de un CLIENTE ---
  
         elif texto_upper.startswith("ACTIVAR PAGO"):
             pago_id = texto.split()[-1].lower()
