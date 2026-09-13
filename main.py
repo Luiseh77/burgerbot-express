@@ -324,10 +324,10 @@ async def handle_texto(telefono: str, texto: str):
         # --- COMANDOS EXCLUSIVOS DE SÚPER ADMINISTRADOR ---
         if telefono == ADMIN_PHONE:
             if texto_upper.startswith("AGREGAR ADMINISTRADOR"):
-                partes = texto.split(" ", 2)
-                if len(partes) >= 3:
-                    num_nuevo = partes[1]
-                    nom_nuevo = partes[2]
+                partes = texto.split(maxsplit=3)
+                if len(partes) >= 4:
+                    num_nuevo = partes[2]
+                    nom_nuevo = partes[3]
                     admins = cargar_administradores()
                     admins[num_nuevo] = {"nombre": nom_nuevo, "rol": "admin", "activo": True}
                     guardar_administradores(admins)
@@ -391,10 +391,10 @@ async def handle_texto(telefono: str, texto: str):
             return
 
         elif texto_upper.startswith("AGREGAR REPARTIDOR"):
-            partes = texto.split(" ", 2)
-            if len(partes) >= 3:
-                num_nuevo = partes[1]
-                nombre_nuevo = partes[2]
+            partes = texto.split(maxsplit=3)
+            if len(partes) >= 4:
+                num_nuevo = partes[2]
+                nombre_nuevo = partes[3]
                 reps = cargar_repartidores()
                 reps[num_nuevo] = {"nombre": nombre_nuevo, "disponible": True, "activo": True}
                 guardar_repartidores(reps)
