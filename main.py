@@ -324,15 +324,14 @@ async def handle_texto(telefono: str, texto: str):
         # --- COMANDOS EXCLUSIVOS DE SÚPER ADMINISTRADOR ---
         if telefono == ADMIN_PHONE:
             if texto_upper.startswith("AGREGAR ADMINISTRADOR"):
-                # Formato esperado: AGREGAR ADMINISTRADOR 584120000000 Carlos
-                partes = texto.split()
-                if len(partes) >= 4:
-                    nuevo_num = partes[2]
-                    nuevo_nom = " ".join(partes[3:])
+                partes = texto.split(" ", 2)
+                if len(partes) >= 3:
+                    num_nuevo = partes[1]
+                    nom_nuevo = partes[2]
                     admins = cargar_administradores()
-                    admins[nuevo_num] = nuevo_nom
+                    admins[num_nuevo] = {"nombre": nom_nuevo, "rol": "admin", "activo": True}
                     guardar_administradores(admins)
-                    enviar_mensaje_texto(telefono, f"✅ Administrador secundario {nuevo_nom} ({nuevo_num}) agregado exitosamente.")
+                    enviar_mensaje_texto(telefono, f"✅ Administrador secundario {nom_nuevo} agregado con el número {num_nuevo}.")
                 else:
                     enviar_mensaje_texto(telefono, "❌ Formato incorrecto. Usa: AGREGAR ADMINISTRADOR numero_telefono nombre")
                 return
@@ -357,7 +356,8 @@ async def handle_texto(telefono: str, texto: str):
             elif texto_upper == "VER ADMINISTRADORES":
                 admins = cargar_administradores()
                 lista = "📋 *ADMINISTRADORES SECUNDARIOS:*\n"
-                for num, nom in admins.items():
+                for num, datos in admins.items():
+                    nom = datos.get("nombre", "Admin") if isinstance(datos, dict) else datos
                     lista += f"• {nom} ({num})\n"
                 enviar_mensaje_texto(telefono, lista)
                 return
@@ -391,15 +391,14 @@ async def handle_texto(telefono: str, texto: str):
             return
 
         elif texto_upper.startswith("AGREGAR REPARTIDOR"):
-            # Formato esperado: AGREGAR REPARTIDOR 584120000000 Carlos
-            partes = texto.split()
-            if len(partes) >= 4:
-                nuevo_numero = partes[2]
-                nuevo_nombre = " ".join(partes[3:])
+            partes = texto.split(" ", 2)
+            if len(partes) >= 3:
+                num_nuevo = partes[1]
+                nombre_nuevo = partes[2]
                 reps = cargar_repartidores()
-                reps[nuevo_numero] = nuevo_nombre
+                reps[num_nuevo] = {"nombre": nombre_nuevo, "disponible": True, "activo": True}
                 guardar_repartidores(reps)
-                enviar_mensaje_texto(telefono, f"✅ Repartidor {nuevo_nombre} ({nuevo_numero}) agregado a la libreta exitosamente.")
+                enviar_mensaje_texto(telefono, f"✅ Repartidor {nombre_nuevo} agregado con el número {num_nuevo}.")
             else:
                 enviar_mensaje_texto(telefono, "❌ Formato incorrecto. Usa: AGREGAR REPARTIDOR numero_telefono nombre")
             return
@@ -425,8 +424,10 @@ async def handle_texto(telefono: str, texto: str):
         elif texto_upper == "VER REPARTIDORES":
             reps = cargar_repartidores()
             lista = "📋 *TUS REPARTIDORES:*\n"
-            for num, nom in reps.items():
-                lista += f"• {nom} ({num})\n"
+            for num, datos in reps.items():
+                nom = datos.get("nombre", "Desconocido") if isinstance(datos, dict) else datos
+                estado = "🟢 Disp." if isinstance(datos, dict) and datos.get("disponible") else "🔴 Ocup."
+                lista += f"• {nom} ({num}) - {estado}\n"
             enviar_mensaje_texto(telefono, lista)
             return
  
