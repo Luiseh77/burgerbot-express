@@ -6,6 +6,7 @@ from fastapi import FastAPI, Request, HTTPException, Query, BackgroundTasks
 from fastapi.responses import PlainTextResponse
 import uvicorn
 from dotenv import load_dotenv
+from datetime import datetime, timezone
 
 # Forzar salida en utf-8 para no tener problemas con emojis en consola de Windows
 if sys.stdout.encoding.lower() != 'utf-8':
@@ -253,13 +254,23 @@ async def procesar_datos_entrega(telefono: str, texto_direccion: str = None, lin
         cambios["estado"] = "PENDIENTE"
         supabase.table("pedidos").update(cambios).eq("id", pedido_id).execute()
         
-        enviar_mensaje_texto(telefono, "¡Excelente! Hemos recibido todos tus datos de entrega. Ya estamos preparando tu pedido y ubicando a un repartidor. Te avisaremos apenas vaya en camino. 🛵")
-        
         # Broadcast a repartidores
         zona = dir_evaluar.split("|")[0].replace("Zona: ", "").strip() if "|" in dir_evaluar else "N/A"
         reps_dict = cargar_repartidores()
         telefonos_repartidores = [k for k, v in reps_dict.items() if isinstance(v, dict) and v.get("disponible", True)]
-        enviar_broadcast_deliverys(telefonos_repartidores, str(pedido_id), zona, pedido["total"])
+        
+        if telefonos_repartidores:
+            enviar_mensaje_texto(telefono, "🚀 ¡Excelente! Hemos recibido todos tus datos de entrega. Ya estamos preparando tu pedido y ubicando a un repartidor. Te avisaremos apenas vaya en camino. 🛵")
+            enviar_broadcast_deliverys(telefonos_repartidores, str(pedido_id), zona, pedido["total"])
+        else:
+            notificar_a_todos_admins_texto(
+                f"⚠️ Pedido #{pedido_id} confirmado pero NO hay repartidores disponibles ahora mismo. "
+                f"Se notificará automáticamente al primero que marque DISPONIBLE."
+            )
+            enviar_mensaje_texto(
+                telefono,
+                "🚀 ¡Tu pedido está confirmado! Estamos coordinando un repartidor y te avisaremos apenas esté en camino. Gracias por tu paciencia 🙏"
+            )
         
     elif tiene_direccion:
         cambios["estado"] = "ESPERANDO_UBICACION"
@@ -524,6 +535,13 @@ async def handle_texto(telefono: str, texto: str):
                 resultado = supabase.table("repartidores").update({"disponible": True}).eq("telefono", telefono).execute()
                 if resultado.data:
                     enviar_mensaje_texto(telefono, "✅ Quedaste marcado como DISPONIBLE. Te llegarán los próximos pedidos.")
+                    
+                    # Recuperación automática de pedidos huérfanos
+                    pendientes = supabase.table("pedidos").select("*").eq("estado", "PENDIENTE").is_("repartidor_id", "null").execute()
+                    if pendientes.data:
+                        for p in pendientes.data:
+                            zona = p.get("direccion", "").split("|")[0].replace("Zona: ", "").strip()
+                            enviar_broadcast_deliverys([telefono], str(p["id"]), zona, p.get("total", 0))
                 else:
                     enviar_mensaje_texto(telefono, "⚠️ Hubo un problema actualizando tu estado, intenta de nuevo.")
             else:
@@ -797,3 +815,24 @@ async def handle_boton(telefono: str, boton_id: str):
 
 if __name__ == "__main__":
     uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
+#   = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = =  
+ #   T A R E A   E N   S E G U N D O   P L A N O   ( E S C A L A C I O N   D E   P E D I D O S )  
+ #   = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = =  
+ a s y n c   d e f   r e v i s a r _ p e d i d o s _ s i n _ r e p a r t i d o r ( ) :  
+         w h i l e   T r u e :  
+                 a w a i t   a s y n c i o . s l e e p ( 6 0 )  
+                 i f   n o t   s u p a b a s e :   c o n t i n u e  
+                 p e n d i e n t e s   =   s u p a b a s e . t a b l e ( ' p e d i d o s ' ) . s e l e c t ( ' * ' ) . e q ( ' e s t a d o ' ,   ' P E N D I E N T E ' ) . i s _ ( ' r e p a r t i d o r _ i d ' ,   ' n u l l ' ) . e q ( ' a l e r t a _ a d m i n _ e n v i a d a ' ,   F a l s e ) . e x e c u t e ( )  
+                 a h o r a   =   d a t e t i m e . n o w ( t i m e z o n e . u t c )  
+                 f o r   p   i n   ( p e n d i e n t e s . d a t a   o r   [ ] ) :  
+                         c r e a d o   =   d a t e t i m e . f r o m i s o f o r m a t ( p [ ' c r e a t e d _ a t ' ] )  
+                         m i n u t o s _ e s p e r a n d o   =   ( a h o r a   -   c r e a d o ) . t o t a l _ s e c o n d s ( )   /   6 0  
+                         i f   m i n u t o s _ e s p e r a n d o   >   1 0 :  
+                                 n o t i f i c a r _ a _ t o d o s _ a d m i n s _ t e x t o ( f ' =ب�  U R G E N T E :   P e d i d o   # { p [ \  
+ i d \ ] }   l l e v a   { i n t ( m i n u t o s _ e s p e r a n d o ) }   m i n u t o s   s i n   r e p a r t i d o r   a s i g n a d o .   R e q u i e r e   a t e n c i � n   m a n u a l . ' )  
+                                 s u p a b a s e . t a b l e ( ' p e d i d o s ' ) . u p d a t e ( { ' a l e r t a _ a d m i n _ e n v i a d a ' :   T r u e } ) . e q ( ' i d ' ,   p [ ' i d ' ] ) . e x e c u t e ( )  
+  
+ @ a p p . o n _ e v e n t ( ' s t a r t u p ' )  
+ a s y n c   d e f   s t a r t u p _ e v e n t ( ) :  
+         a s y n c i o . c r e a t e _ t a s k ( r e v i s a r _ p e d i d o s _ s i n _ r e p a r t i d o r ( ) )  
+ 
