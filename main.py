@@ -815,24 +815,3 @@ async def handle_boton(telefono: str, boton_id: str):
 
 if __name__ == "__main__":
     uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
-#   = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = =  
- #   T A R E A   E N   S E G U N D O   P L A N O   ( E S C A L A C I O N   D E   P E D I D O S )  
- #   = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = =  
- a s y n c   d e f   r e v i s a r _ p e d i d o s _ s i n _ r e p a r t i d o r ( ) :  
-         w h i l e   T r u e :  
-                 a w a i t   a s y n c i o . s l e e p ( 6 0 )  
-                 i f   n o t   s u p a b a s e :   c o n t i n u e  
-                 p e n d i e n t e s   =   s u p a b a s e . t a b l e ( ' p e d i d o s ' ) . s e l e c t ( ' * ' ) . e q ( ' e s t a d o ' ,   ' P E N D I E N T E ' ) . i s _ ( ' r e p a r t i d o r _ i d ' ,   ' n u l l ' ) . e q ( ' a l e r t a _ a d m i n _ e n v i a d a ' ,   F a l s e ) . e x e c u t e ( )  
-                 a h o r a   =   d a t e t i m e . n o w ( t i m e z o n e . u t c )  
-                 f o r   p   i n   ( p e n d i e n t e s . d a t a   o r   [ ] ) :  
-                         c r e a d o   =   d a t e t i m e . f r o m i s o f o r m a t ( p [ ' c r e a t e d _ a t ' ] )  
-                         m i n u t o s _ e s p e r a n d o   =   ( a h o r a   -   c r e a d o ) . t o t a l _ s e c o n d s ( )   /   6 0  
-                         i f   m i n u t o s _ e s p e r a n d o   >   1 0 :  
-                                 n o t i f i c a r _ a _ t o d o s _ a d m i n s _ t e x t o ( f ' =Ø¨Þ  U R G E N T E :   P e d i d o   # { p [ \  
- i d \ ] }   l l e v a   { i n t ( m i n u t o s _ e s p e r a n d o ) }   m i n u t o s   s i n   r e p a r t i d o r   a s i g n a d o .   R e q u i e r e   a t e n c i ó n   m a n u a l . ' )  
-                                 s u p a b a s e . t a b l e ( ' p e d i d o s ' ) . u p d a t e ( { ' a l e r t a _ a d m i n _ e n v i a d a ' :   T r u e } ) . e q ( ' i d ' ,   p [ ' i d ' ] ) . e x e c u t e ( )  
-  
- @ a p p . o n _ e v e n t ( ' s t a r t u p ' )  
- a s y n c   d e f   s t a r t u p _ e v e n t ( ) :  
-         a s y n c i o . c r e a t e _ t a s k ( r e v i s a r _ p e d i d o s _ s i n _ r e p a r t i d o r ( ) )  
- 
