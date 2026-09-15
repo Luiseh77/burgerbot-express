@@ -815,3 +815,29 @@ async def handle_boton(telefono: str, boton_id: str):
 
 if __name__ == "__main__":
     uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
+
+# ============================================================
+# TAREA EN SEGUNDO PLANO (ESCALACIÓN DE PEDIDOS SIN REPARTIDOR)
+# ============================================================
+async def revisar_pedidos_sin_repartidor():
+    while True:
+        await asyncio.sleep(60)  # Revisar cada minuto
+        if not supabase:
+            continue
+        try:
+            pendientes = supabase.table("pedidos").select("*").eq("estado", "PENDIENTE").is_("repartidor_id", "null").eq("alerta_admin_enviada", False).execute()
+            ahora = datetime.now(timezone.utc)
+            for p in (pendientes.data or []):
+                creado = datetime.fromisoformat(p["created_at"])
+                minutos_esperando = (ahora - creado).total_seconds() / 60
+                if minutos_esperando > 10:
+                    notificar_a_todos_admins_texto(
+                        f"🚨 URGENTE: Pedido #{p['id']} lleva {int(minutos_esperando)} minutos sin repartidor asignado. Requiere atención manual."
+                    )
+                    supabase.table("pedidos").update({"alerta_admin_enviada": True}).eq("id", p["id"]).execute()
+        except Exception as e:
+            print(f"[revisar_pedidos] Error: {e}")
+
+@app.on_event("startup")
+async def startup_event():
+    asyncio.create_task(revisar_pedidos_sin_repartidor())
