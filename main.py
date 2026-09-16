@@ -82,18 +82,16 @@ def es_administrador(telefono: str) -> bool:
     return telefono in admins
 
 def notificar_a_todos_admins_con_botones(pedido_id: str):
-    if ADMIN_PHONE:
-        enviar_botones_aprobacion(ADMIN_PHONE, pedido_id)
     admins = cargar_administradores()
-    for admin_tel in admins.keys():
-        enviar_botones_aprobacion(admin_tel, pedido_id)
+    destinatarios = set([ADMIN_PHONE]) | set(admins.keys()) if ADMIN_PHONE else set(admins.keys())
+    for tel in destinatarios:
+        enviar_botones_aprobacion(tel, pedido_id)
 
 def notificar_a_todos_admins_texto(mensaje: str):
-    if ADMIN_PHONE:
-        enviar_mensaje_texto(ADMIN_PHONE, mensaje)
     admins = cargar_administradores()
-    for admin_tel in admins.keys():
-        enviar_mensaje_texto(admin_tel, mensaje)
+    destinatarios = set([ADMIN_PHONE]) | set(admins.keys()) if ADMIN_PHONE else set(admins.keys())
+    for tel in destinatarios:
+        enviar_mensaje_texto(tel, mensaje)
 
 
 def cargar_repartidores():
