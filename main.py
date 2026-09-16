@@ -44,6 +44,13 @@ def ya_fue_procesado(wamid: str) -> bool:
 VERIFY_TOKEN = os.getenv("VERIFY_TOKEN", "")
 ADMIN_PHONE = os.getenv("ADMIN_PHONE", "")
 
+RESPUESTAS_POR_ESTADO = {
+    "PAGO_POR_VALIDAR": "Hemos recibido tu pago y lo estamos verificando. En breve te confirmaremos. ⏳",
+    "PENDIENTE": "Tu pedido ya está confirmado y estamos coordinando un repartidor. Te avisaremos apenas esté en camino. 🛵",
+    "ASIGNADO": "¡Tu pedido ya fue asignado a un repartidor y va en camino! 🚀",
+    "EN_CAMINO": "¡Tu pedido va en camino! Te avisaremos cuando el repartidor esté cerca. 📍"
+}
+
 # Archivos locales para persistencia
 REPARTIDORES_FILE = "repartidores.json"
 ADMINISTRADORES_FILE = "administradores.json"
@@ -698,7 +705,14 @@ async def handle_texto(telefono: str, texto: str):
                 await procesar_datos_entrega(telefono, texto_direccion=texto)
             return
 
-    # 2. Si no está esperando pago, es un chat normal con la IA
+        # 1.8 Verificar si tiene un pedido activo en curso (evitar que hable con Gemini)
+        resp_pedido_activo = supabase.table("pedidos").select("*").in_("estado", list(RESPUESTAS_POR_ESTADO.keys())).execute()
+        pedido_activo = next((p for p in (resp_pedido_activo.data or []) if telefono in str(p.get("cliente_nombre", ""))), None)
+        if pedido_activo:
+            enviar_mensaje_texto(telefono, RESPUESTAS_POR_ESTADO[pedido_activo["estado"]])
+            return
+
+    # 2. Si no está en un estado bloqueante, es un chat normal con la IA
     if telefono not in SESSION_MEMORY:
         SESSION_MEMORY[telefono] = []
         
