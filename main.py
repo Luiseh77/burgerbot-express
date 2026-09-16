@@ -621,7 +621,11 @@ async def handle_texto(telefono: str, texto: str):
         response = supabase.table("pedidos").select("*").eq("estado", "ESPERANDO_PAGO").execute()
         tiene_pendiente = any(telefono in str(p.get("cliente_nombre", "")) for p in (response.data or []))
         if tiene_pendiente:
-            enviar_mensaje_texto(telefono, "⚠️ Tienes un pedido pendiente por pagar. Por favor, envíame la foto o captura de pantalla de tu pago para poder procesarlo. Si deseas cancelar ese pedido y empezar de nuevo, por favor contacta al administrador.")
+            texto_lower = texto.lower().strip()
+            if any(w in texto_lower for w in ["zelle", "efectivo", "pago movil", "pago móvil", "movil", "móvil"]):
+                enviar_mensaje_texto(telefono, "Veo que quieres cambiar tu método de pago. Si el error fue nuestro, avísale al administrador escribiendo AYUDA, o si prefieres, cancela este pedido y hagamos uno nuevo con el método correcto.")
+            else:
+                enviar_mensaje_texto(telefono, "⚠️ Tienes un pedido pendiente por pagar. Por favor, envíame la foto o captura de pantalla de tu pago para poder procesarlo. Si deseas cancelar ese pedido y empezar de nuevo, por favor contacta al administrador.")
             return
 
         # 1.5 Verificar si está en fase de recolección de dirección / ubicación
@@ -655,6 +659,14 @@ async def handle_texto(telefono: str, texto: str):
         
     elif respuesta_ia["tipo"] == "pedido_completado":
         datos_pedido = respuesta_ia["contenido"]
+
+        metodo_cliente = datos_pedido.get('metodo_pago', '')
+        
+        # CAPA 2: Validar método de pago exacto antes de guardar el pedido
+        if metodo_cliente not in ["Efectivo", "Pago Móvil", "Zelle"]:
+            print(f"⚠️ metodo_pago inesperado: {metodo_cliente}")
+            enviar_mensaje_texto(telefono, "¿Me podrías confirmar tu método de pago? (Efectivo, Pago Móvil o Zelle)")
+            return
         
         # Inject phone number into name to track it without altering DB schema
         nombre_original = datos_pedido.get('cliente_nombre', 'Cliente')
@@ -673,20 +685,13 @@ async def handle_texto(telefono: str, texto: str):
             total_usd = float(resultado.get('total', 0))
             total_bs = round(total_usd * tasa_actual, 2)
             metodos = cargar_metodos_pago()
-            metodo_cliente = datos_pedido.get('metodo_pago', '').lower()
             
-            detalles_pago = ""
-            key_encontrada = None
-            for k, v in metodos.items():
-                if v.get("activo", True) and (k.replace("_", " ") in metodo_cliente or v["nombre"].lower() in metodo_cliente):
-                    key_encontrada = k
-                    detalles_pago = v["detalles"]
-                    break
-            if not detalles_pago:
-                detalles_pago = "Métodos disponibles:\n"
-                for k, v in metodos.items():
-                    if v.get("activo", True):
-                        detalles_pago += f"- *{v['nombre']}*: {v['detalles']}\n"
+            if metodo_cliente == "Pago Móvil":
+                detalles_pago = metodos.get("pago_movil", {}).get("detalles", "Datos de pago móvil no configurados")
+            elif metodo_cliente == "Zelle":
+                detalles_pago = metodos.get("zelle", {}).get("detalles", "Datos de Zelle no configurados")
+            else: # Efectivo
+                detalles_pago = "Pago en efectivo al momento de la entrega."
                         
             texto_cobro = (
                 f"¡Excelente {nombre_original}!\n\n"
@@ -698,7 +703,7 @@ async def handle_texto(telefono: str, texto: str):
             enviar_mensaje_texto(telefono, texto_cobro)
             
             # Enviar formato pegable de Pago Móvil en mensaje separado
-            if key_encontrada == "pago_movil" or "movil" in metodo_cliente or "móvil" in metodo_cliente:
+            if metodo_cliente == "Pago Móvil":
                 pm = metodos.get("pago_movil", {})
                 if not pm:
                     print("⚠️ Método pago_movil no configurado en metodos_pago.json")

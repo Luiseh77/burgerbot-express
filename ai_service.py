@@ -113,7 +113,11 @@ finalizar_pedido_tool = types.Tool(
                 properties={
                     "cliente_nombre": types.Schema(type=types.Type.STRING),
                     "zona_delivery": types.Schema(type=types.Type.STRING, description="Centro, Norte o Sur"),
-                    "metodo_pago": types.Schema(type=types.Type.STRING, description="Ej: Efectivo, Pago Móvil, Zelle"),
+                    "metodo_pago": types.Schema(
+                        type=types.Type.STRING, 
+                        enum=["Efectivo", "Pago Móvil", "Zelle"],
+                        description="Método de pago EXACTO confirmado por el cliente. NUNCA asumas ni copies del menú de opciones — el cliente debe decir explícitamente cuál eligió."
+                    ),
                     "items": types.Schema(
                         type=types.Type.ARRAY,
                         items=types.Schema(
