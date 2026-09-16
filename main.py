@@ -6,7 +6,7 @@ from fastapi import FastAPI, Request, HTTPException, Query, BackgroundTasks
 from fastapi.responses import PlainTextResponse
 import uvicorn
 from dotenv import load_dotenv
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 
 # Forzar salida en utf-8 para no tener problemas con emojis en consola de Windows
 if sys.stdout.encoding.lower() != 'utf-8':
@@ -23,6 +23,23 @@ from whatsapp_service import enviar_mensaje_texto, enviar_botones_aprobacion, en
 load_dotenv()
 
 app = FastAPI(title="BurgerBot Express Webhook")
+
+# ============================================================
+# DEDUPLICACIÓN DE WEBHOOKS (Bug 2 — mensajes duplicados de Meta)
+# ============================================================
+mensajes_procesados_recientes: dict = {}  # {wamid: unix_timestamp}
+
+def ya_fue_procesado(wamid: str) -> bool:
+    """Retorna True si este wamid ya fue procesado en los últimos 60s."""
+    ahora = datetime.now(timezone.utc).timestamp()
+    # Limpieza automática de entradas viejas
+    for w in list(mensajes_procesados_recientes.keys()):
+        if ahora - mensajes_procesados_recientes[w] > 60:
+            del mensajes_procesados_recientes[w]
+    if wamid in mensajes_procesados_recientes:
+        return True
+    mensajes_procesados_recientes[wamid] = ahora
+    return False
 
 VERIFY_TOKEN = os.getenv("VERIFY_TOKEN", "")
 ADMIN_PHONE = os.getenv("ADMIN_PHONE", "")
@@ -181,6 +198,12 @@ async def webhook_whatsapp(request: Request, background_tasks: BackgroundTasks):
                 
                 if "messages" in value:
                     for msg in value["messages"]:
+                        # Bug 2: Ignorar webhooks duplicados que Meta reenvía
+                        wamid = msg.get("id", "")
+                        if wamid and ya_fue_procesado(wamid):
+                            print(f"⚠️ Webhook duplicado ignorado: {wamid}")
+                            continue
+
                         telefono_cliente = msg["from"]
                         
                         # --- CHECK-IN DIARIO PARA STAFF ---
@@ -537,7 +560,14 @@ async def handle_texto(telefono: str, texto: str):
                     enviar_mensaje_texto(telefono, "✅ Quedaste marcado como DISPONIBLE. Te llegarán los próximos pedidos.")
                     
                     # Recuperación automática de pedidos huérfanos
-                    pendientes = supabase.table("pedidos").select("*").eq("estado", "PENDIENTE").is_("repartidor_id", "null").execute()
+                    # Bug 1: Solo pedidos de las últimas 3h y en orden correlativo
+                    limite = (datetime.now(timezone.utc) - timedelta(hours=3)).isoformat()
+                    pendientes = supabase.table("pedidos").select("*") \
+                        .eq("estado", "PENDIENTE") \
+                        .is_("repartidor_id", "null") \
+                        .gte("created_at", limite) \
+                        .order("created_at", desc=False) \
+                        .execute()
                     if pendientes.data:
                         for p in pendientes.data:
                             zona = p.get("direccion", "").split("|")[0].replace("Zona: ", "").strip()
