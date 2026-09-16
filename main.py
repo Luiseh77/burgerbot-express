@@ -721,12 +721,7 @@ async def handle_texto(telefono: str, texto: str):
 
         metodo_cliente = datos_pedido.get('metodo_pago', '')
         
-        # CAPA 2: Validar método de pago exacto antes de guardar el pedido
-        if metodo_cliente not in ["Efectivo", "Pago Móvil", "Zelle"]:
-            print(f"⚠️ metodo_pago inesperado: {metodo_cliente}")
-            enviar_mensaje_texto(telefono, "¿Me podrías confirmar tu método de pago? (Efectivo, Pago Móvil o Zelle)")
-            return
-        
+
         # Inject phone number into name to track it without altering DB schema
         nombre_original = datos_pedido.get('cliente_nombre', 'Cliente')
         datos_pedido["cliente_nombre"] = f"{nombre_original} ({telefono})"
