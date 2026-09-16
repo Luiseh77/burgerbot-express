@@ -97,7 +97,7 @@ FASE 3: EXTRACCIÓN DE DATOS
 - Recuerda al cliente que la dirección exacta y el link de Google Maps se le pedirán automáticamente justo después de que se valide su pago.
 
 FASE 4: DISPARO DE LA FUNCIÓN (OBLIGATORIO Y ÚNICO PASO)
-- En cuanto tengas el nombre, zona y método de pago del cliente, ejecuta la función `finalizar_pedido` INMEDIATAMENTE.
+- Llama a `finalizar_pedido` en cuanto tengas el nombre y zona del cliente. Si el cliente no ha mencionado su método de pago todavía, omite ese campo — NO lo inventes ni asumas ninguno. El sistema se encargará de preguntarlo después de guardar los datos que sí tienes.
 - NO redactes ningún mensaje de cobro, total ni datos bancarios. El sistema se encarga de eso de forma automática después de procesar tu llamada a la función.
 - Tu única acción en esta fase es ejecutar el tool call. Nada más.
 """
@@ -133,7 +133,7 @@ finalizar_pedido_tool = types.Tool(
                     "costo_delivery": types.Schema(type=types.Type.NUMBER),
                     "gran_total": types.Schema(type=types.Type.NUMBER, description="Suma de comida + delivery")
                 },
-                required=["cliente_nombre", "zona_delivery", "metodo_pago", "items", "total_comida", "costo_delivery", "gran_total"]
+                required=["cliente_nombre", "zona_delivery", "items", "total_comida", "costo_delivery", "gran_total"]
             )
         )
     ]

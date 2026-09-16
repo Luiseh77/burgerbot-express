@@ -348,6 +348,45 @@ async def handle_ubicacion(telefono: str, lat: float, lng: float):
         )
         enviar_mensaje_texto(telefono, texto_cobro)
 
+def generar_y_enviar_cobro(resultado: dict, telefono: str, nombre_original: str = None):
+    if not nombre_original:
+        # Extraer del nombre guardado "Nombre (telefono)"
+        nombre_guardado = resultado.get('cliente_nombre', 'Cliente')
+        nombre_original = nombre_guardado.split(' (')[0] if ' (' in nombre_guardado else nombre_guardado
+        
+    metodo_cliente = resultado.get('metodo_pago', '')
+    
+    tasa_actual = obtener_tasa_bcv()
+    total_usd = float(resultado.get('total', 0))
+    total_bs = round(total_usd * tasa_actual, 2)
+    metodos = cargar_metodos_pago()
+    
+    if metodo_cliente == "Pago Móvil":
+        detalles_pago = metodos.get("pago_movil", {}).get("detalles", "Datos de pago móvil no configurados")
+    elif metodo_cliente == "Zelle":
+        detalles_pago = metodos.get("zelle", {}).get("detalles", "Datos de Zelle no configurados")
+    else: # Efectivo
+        detalles_pago = "Pago en efectivo al momento de la entrega."
+                
+    texto_cobro = (
+        f"¡Excelente {nombre_original}!\n\n"
+        f"Tu pedido está confirmado. El Gran Total a pagar es: *${total_usd}*\n"
+        f"*(Equivalente a {total_bs} Bs según tasa BCV de {tasa_actual})*\n\n"
+        "Por favor, realiza tu pago y envíame por aquí la *captura de pantalla* del comprobante.\n\n"
+        f"Instrucciones de Pago:\n{detalles_pago}"
+    )
+    enviar_mensaje_texto(telefono, texto_cobro)
+    
+    # Enviar formato pegable de Pago Móvil en mensaje separado
+    if metodo_cliente == "Pago Móvil":
+        pm = metodos.get("pago_movil", {})
+        if pm:
+            banco = pm.get("banco", "")
+            tlf = pm.get("telefono", "")
+            ced = pm.get("cedula", "")
+            monto_formateado = f"{total_bs:.2f}".replace(".", ",")
+            enviar_mensaje_texto(telefono, f"Banco: {banco}\nTeléfono: {tlf}\nCédula: {ced}\nMonto: {monto_formateado} Bs")
+
 async def handle_texto(telefono: str, texto: str):
     texto_upper = texto.strip().upper()
     es_admin = es_administrador(telefono)
@@ -618,6 +657,26 @@ async def handle_texto(telefono: str, texto: str):
 
     # 1. Verificar si el cliente tiene un pedido en ESPERANDO_PAGO
     if supabase:
+        # 0.5 Verificar si está esperando MÉTODO DE PAGO
+        resp_metodo = supabase.table("pedidos").select("*").eq("estado", "ESPERANDO_METODO_PAGO").eq("telefono", telefono).execute()
+        if resp_metodo.data:
+            pedido_actual = resp_metodo.data[0]
+            texto_lower = texto.lower().strip()
+            
+            METODOS_VALIDOS = {"efectivo": "Efectivo", "zelle": "Zelle", "pago movil": "Pago Móvil", "pago móvil": "Pago Móvil", "movil": "Pago Móvil", "móvil": "Pago Móvil"}
+            metodo_encontrado = next((v for k, v in METODOS_VALIDOS.items() if k in texto_lower), None)
+            
+            if metodo_encontrado:
+                pedido_actual["metodo_pago"] = metodo_encontrado
+                pedido_actual["estado"] = "ESPERANDO_PAGO"
+                supabase.table("pedidos").update({"metodo_pago": metodo_encontrado, "estado": "ESPERANDO_PAGO"}).eq("id", pedido_actual["id"]).execute()
+                print(f"🔄 Pedido {pedido_actual['id']} actualizado con método de pago: {metodo_encontrado}")
+                generar_y_enviar_cobro(pedido_actual, telefono)
+            else:
+                enviar_mensaje_texto(telefono, "No logré identificar tu método de pago. Por favor escribe: Efectivo, Pago Móvil o Zelle.")
+            return
+
+        # 1. Verificar si el cliente tiene un pedido en ESPERANDO_PAGO
         response = supabase.table("pedidos").select("*").eq("estado", "ESPERANDO_PAGO").execute()
         tiene_pendiente = any(telefono in str(p.get("cliente_nombre", "")) for p in (response.data or []))
         if tiene_pendiente:
@@ -675,44 +734,22 @@ async def handle_texto(telefono: str, texto: str):
         # Guardar el teléfono real en la nueva columna de DB
         datos_pedido["telefono"] = telefono
         
-        # Guardar en DB con estado ESPERANDO_PAGO
-        resultado = guardar_pedido_nuevo(datos_pedido)
+        if not metodo_cliente:
+            resultado = guardar_pedido_nuevo(datos_pedido, estado_inicial="ESPERANDO_METODO_PAGO")
+            if resultado:
+                print(f"💾 Pedido {resultado['id']} guardado sin método. Esperando método de pago.")
+                enviar_mensaje_texto(telefono, f"¡Gracias {nombre_original}! Solo me falta un dato: ¿cómo vas a pagar? (Efectivo, Pago Móvil o Zelle)")
+            return
+            
+        if metodo_cliente not in ["Efectivo", "Pago Móvil", "Zelle"]:
+            print(f"⚠️ metodo_pago inesperado: {metodo_cliente}")
+            enviar_mensaje_texto(telefono, "¿Me podrías confirmar tu método de pago? (Efectivo, Pago Móvil o Zelle)")
+            return
+
+        resultado = guardar_pedido_nuevo(datos_pedido, estado_inicial="ESPERANDO_PAGO")
         if resultado:
             print(f"💾 Pedido {resultado['id']} guardado. Esperando pago.")
-            
-            # Mensaje de cobro generado por el código usando datos reales del DB
-            tasa_actual = obtener_tasa_bcv()
-            total_usd = float(resultado.get('total', 0))
-            total_bs = round(total_usd * tasa_actual, 2)
-            metodos = cargar_metodos_pago()
-            
-            if metodo_cliente == "Pago Móvil":
-                detalles_pago = metodos.get("pago_movil", {}).get("detalles", "Datos de pago móvil no configurados")
-            elif metodo_cliente == "Zelle":
-                detalles_pago = metodos.get("zelle", {}).get("detalles", "Datos de Zelle no configurados")
-            else: # Efectivo
-                detalles_pago = "Pago en efectivo al momento de la entrega."
-                        
-            texto_cobro = (
-                f"¡Excelente {nombre_original}!\n\n"
-                f"Tu pedido está confirmado. El Gran Total a pagar es: *${total_usd}*\n"
-                f"*(Equivalente a {total_bs} Bs según tasa BCV de {tasa_actual})*\n\n"
-                "Por favor, realiza tu pago y envíame por aquí la *captura de pantalla* del comprobante.\n\n"
-                f"Instrucciones de Pago:\n{detalles_pago}"
-            )
-            enviar_mensaje_texto(telefono, texto_cobro)
-            
-            # Enviar formato pegable de Pago Móvil en mensaje separado
-            if metodo_cliente == "Pago Móvil":
-                pm = metodos.get("pago_movil", {})
-                if not pm:
-                    print("⚠️ Método pago_movil no configurado en metodos_pago.json")
-                else:
-                    banco = pm.get("banco", "")
-                    tlf = pm.get("telefono", "")
-                    ced = pm.get("cedula", "")
-                    monto_formateado = f"{total_bs:.2f}".replace(".", ",")
-                    enviar_mensaje_texto(telefono, f"Banco: {banco}\nTeléfono: {tlf}\nCédula: {ced}\nMonto: {monto_formateado} Bs")
+            generar_y_enviar_cobro(resultado, telefono, nombre_original)
         else:
             print("❌ Error fatal: La base de datos no pudo guardar el pedido.")
             enviar_mensaje_texto(telefono, "❌ Lo siento, hubo un error técnico al registrar tu pedido. Por favor, intenta hacer el pedido nuevamente.")

@@ -15,9 +15,9 @@ except Exception as e:
     supabase = None
     print(f"Advertencia: No se pudo conectar a Supabase. Faltan las llaves en el .env: {e}")
 
-def guardar_pedido_nuevo(datos_pedido: dict) -> dict:
+def guardar_pedido_nuevo(datos_pedido: dict, estado_inicial: str = "ESPERANDO_PAGO") -> dict:
     """
-    Guarda un nuevo pedido en la base de datos con estado PENDIENTE.
+    Guarda un nuevo pedido en la base de datos.
     Devuelve los datos insertados (incluyendo el ID generado).
     """
     if not supabase: return None
@@ -33,10 +33,10 @@ def guardar_pedido_nuevo(datos_pedido: dict) -> dict:
         "cliente_nombre": datos_pedido.get("cliente_nombre", "Cliente"),
         "direccion": f"Zona: {datos_pedido.get('zona_delivery', 'N/A')}",
         "ubicacion_maps": None,
-        "metodo_pago": datos_pedido.get("metodo_pago", "No especificado"),
+        "metodo_pago": datos_pedido.get("metodo_pago") or None,
         "items": datos_pedido.get("items", []),  # Supabase maneja JSON/JSONB nativamente
         "total": gran_total,
-        "estado": "ESPERANDO_PAGO",
+        "estado": estado_inicial,
         "repartidor_id": None
     }
     
