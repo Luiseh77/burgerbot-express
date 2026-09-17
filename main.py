@@ -748,6 +748,9 @@ async def handle_texto(telefono: str, texto: str):
             if resultado:
                 print(f"💾 Pedido {resultado['id']} guardado sin método. Esperando método de pago.")
                 enviar_mensaje_texto(telefono, f"¡Gracias {nombre_original}! Solo me falta un dato: ¿cómo vas a pagar? (Efectivo, Pago Móvil o Zelle)")
+            else:
+                print("❌ Error fatal: no se pudo guardar el pedido sin método de pago.")
+                enviar_mensaje_texto(telefono, "❌ Lo siento, hubo un error técnico al registrar tu pedido. Por favor, intenta de nuevo.")
             return
             
         if metodo_cliente not in ["Efectivo", "Pago Móvil", "Zelle"]:
