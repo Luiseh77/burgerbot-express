@@ -31,6 +31,7 @@ def guardar_pedido_nuevo(datos_pedido: dict, estado_inicial: str = "ESPERANDO_PA
     # Preparamos el objeto para insertar adaptando los nuevos campos
     nuevo_registro = {
         "cliente_nombre": datos_pedido.get("cliente_nombre", "Cliente"),
+        "telefono": datos_pedido.get("telefono"),
         "direccion": f"Zona: {datos_pedido.get('zona_delivery', 'N/A')}",
         "ubicacion_maps": None,
         "metodo_pago": datos_pedido.get("metodo_pago") or None,
